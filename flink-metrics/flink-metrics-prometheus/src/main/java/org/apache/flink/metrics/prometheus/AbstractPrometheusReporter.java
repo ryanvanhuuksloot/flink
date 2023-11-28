@@ -47,12 +47,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.FILTER_LABEL_VALUE_CHARACTER;
+import static org.apache.flink.metrics.prometheus.AbstractPrometheusReporterOptions.FILTER_LABEL_VALUE_CHARACTER;
 
 /** base prometheus reporter for prometheus metrics. */
 @PublicEvolving
 public abstract class AbstractPrometheusReporter implements MetricReporter {
-
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
     private static final Pattern UNALLOWED_CHAR_PATTERN = Pattern.compile("[^a-zA-Z0-9:_]");
@@ -74,6 +73,7 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
     }
 
     private CharacterFilter labelValueCharactersFilter = CHARACTER_FILTER;
+    protected Map<String, String> labels = Collections.emptyMap();
 
     @VisibleForTesting final CollectorRegistry registry = new CollectorRegistry(true);
 
@@ -105,6 +105,11 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
             dimensionKeys.add(
                     CHARACTER_FILTER.filterCharacters(key.substring(1, key.length() - 1)));
             dimensionValues.add(labelValueCharactersFilter.filterCharacters(dimension.getValue()));
+        }
+
+        for (final Map.Entry<String, String> label : labels.entrySet()) {
+            dimensionKeys.add(label.getKey());
+            dimensionValues.add(label.getValue());
         }
 
         final String scopedMetricName = getScopedName(metricName, group);

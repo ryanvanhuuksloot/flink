@@ -22,20 +22,23 @@ import org.apache.flink.metrics.reporter.MetricReporterFactory;
 import org.apache.flink.util.NetUtils;
 
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Properties;
+
+import static org.apache.flink.metrics.prometheus.AbstractPrometheusReporterOptions.LABELS;
+import static org.apache.flink.metrics.prometheus.PrometheusParsingUtils.parseLabels;
+import static org.apache.flink.metrics.prometheus.PrometheusReporterOptions.PORT;
 
 /** {@link MetricReporterFactory} for {@link PrometheusReporter}. */
 public class PrometheusReporterFactory implements MetricReporterFactory {
-
-    static final String ARG_PORT = "port";
-    private static final String DEFAULT_PORT = "9249";
-
     @Override
     public PrometheusReporter createMetricReporter(Properties properties) {
         MetricConfig metricConfig = (MetricConfig) properties;
-        String portsConfig = metricConfig.getString(ARG_PORT, DEFAULT_PORT);
+        String portsConfig = metricConfig.getString(PORT.key(), PORT.defaultValue().toString());
+        Map<String, String> labels =
+                parseLabels(metricConfig.getString(LABELS.key(), LABELS.defaultValue()));
         Iterator<Integer> ports = NetUtils.getPortRangeFromString(portsConfig);
 
-        return new PrometheusReporter(ports);
+        return new PrometheusReporter(ports, labels);
     }
 }

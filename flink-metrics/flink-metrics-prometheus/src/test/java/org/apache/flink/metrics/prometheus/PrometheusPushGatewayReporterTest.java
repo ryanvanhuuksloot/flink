@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
+import static org.apache.flink.metrics.prometheus.PrometheusParsingUtils.parseGroupingKey;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.HOST;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.HOST_URL;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.PORT;
@@ -35,22 +36,20 @@ class PrometheusPushGatewayReporterTest {
 
     @Test
     void testParseGroupingKey() {
-        Map<String, String> groupingKey =
-                PrometheusPushGatewayReporterFactory.parseGroupingKey("k1=v1;k2=v2");
+        Map<String, String> groupingKey = parseGroupingKey("k1=v1;k2=v2");
         assertThat(groupingKey).containsEntry("k1", "v1");
         assertThat(groupingKey).containsEntry("k2", "v2");
     }
 
     @Test
     void testParseIncompleteGroupingKey() {
-        Map<String, String> groupingKey =
-                PrometheusPushGatewayReporterFactory.parseGroupingKey("k1=");
+        Map<String, String> groupingKey = parseGroupingKey("k1=");
         assertThat(groupingKey).isEmpty();
 
-        groupingKey = PrometheusPushGatewayReporterFactory.parseGroupingKey("=v1");
+        groupingKey = parseGroupingKey("=v1");
         assertThat(groupingKey).isEmpty();
 
-        groupingKey = PrometheusPushGatewayReporterFactory.parseGroupingKey("k1");
+        groupingKey = parseGroupingKey("k1");
         assertThat(groupingKey).isEmpty();
     }
 

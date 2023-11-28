@@ -29,6 +29,7 @@ import io.prometheus.client.exporter.HTTPServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Iterator;
+import java.util.Map;
 
 /** {@link MetricReporter} that exports {@link Metric Metrics} via Prometheus. */
 @PublicEvolving
@@ -43,7 +44,8 @@ public class PrometheusReporter extends AbstractPrometheusReporter {
         return port;
     }
 
-    PrometheusReporter(Iterator<Integer> ports) {
+    PrometheusReporter(Iterator<Integer> ports, Map<String, String> labels) {
+        this.labels = labels;
         while (ports.hasNext()) {
             port = ports.next();
             try {

@@ -33,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 
 import static org.apache.flink.metrics.prometheus.PrometheusReporterTest.pollMetrics;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,7 +60,9 @@ class PrometheusReporterTaskScopeTest {
 
     @BeforeEach
     void setupReporter() {
-        reporter = new PrometheusReporter(NetUtils.getPortRangeFromString("9400-9500"));
+        reporter =
+                new PrometheusReporter(
+                        NetUtils.getPortRangeFromString("9400-9500"), Collections.emptyMap());
     }
 
     @AfterEach

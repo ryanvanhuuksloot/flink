@@ -23,6 +23,7 @@ import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.Histogram;
 import org.apache.flink.metrics.Meter;
 import org.apache.flink.metrics.Metric;
+import org.apache.flink.metrics.MetricConfig;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.SimpleCounter;
 import org.apache.flink.metrics.util.TestHistogram;
@@ -44,21 +45,32 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 
+import static org.apache.flink.metrics.prometheus.AbstractPrometheusReporterOptions.LABELS;
+import static org.apache.flink.metrics.prometheus.PrometheusParsingUtils.parseLabels;
+import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.HOST;
+import static org.apache.flink.metrics.prometheus.PrometheusReporterOptions.PORT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Basic test for {@link PrometheusReporter}. */
 class PrometheusReporterTest {
 
-    private static final String[] LABEL_NAMES = {"label1", "label2"};
-    private static final String[] LABEL_VALUES = new String[] {"value1", "value2"};
+    private static final String[] DEFAULT_LABEL_NAMES = {"label1", "label2"};
+    private static final String[] DEFAULT_LABEL_VALUES = new String[] {"value1", "value2"};
+    private static final String[] CONFIG_LABEL_NAMES = {"global_label1", "global_label2"};
+    private static final String[] CONFIG_LABEL_VALUES =
+            new String[] {"global_value1", "global_value2"};
     private static final String LOGICAL_SCOPE = "logical_scope";
 
     private static final String DIMENSIONS =
             String.format(
                     "%s=\"%s\",%s=\"%s\"",
-                    LABEL_NAMES[0], LABEL_VALUES[0], LABEL_NAMES[1], LABEL_VALUES[1]);
+                    DEFAULT_LABEL_NAMES[0],
+                    DEFAULT_LABEL_VALUES[0],
+                    DEFAULT_LABEL_NAMES[1],
+                    DEFAULT_LABEL_VALUES[1]);
     private static final String DEFAULT_LABELS = "{" + DIMENSIONS + ",}";
     private static final String SCOPE_PREFIX =
             PrometheusReporter.SCOPE_PREFIX + LOGICAL_SCOPE + PrometheusReporter.SCOPE_SEPARATOR;
@@ -70,11 +82,11 @@ class PrometheusReporterTest {
 
     @BeforeEach
     void setupReporter() {
-        reporter = new PrometheusReporter(portRangeProvider.next());
+        reporter = new PrometheusReporter(portRangeProvider.next(), Collections.emptyMap());
 
         metricGroup =
                 TestUtils.createTestMetricGroup(
-                        LOGICAL_SCOPE, TestUtils.toMap(LABEL_NAMES, LABEL_VALUES));
+                        LOGICAL_SCOPE, TestUtils.toMap(DEFAULT_LABEL_NAMES, DEFAULT_LABEL_VALUES));
     }
 
     @AfterEach
@@ -82,6 +94,47 @@ class PrometheusReporterTest {
         if (reporter != null) {
             reporter.close();
         }
+    }
+
+    @Test
+    void assertLabelsAreLoadedIntoClass() {
+        MetricConfig metricConfig = new MetricConfig();
+        metricConfig.setProperty(HOST.key(), "localhost");
+        metricConfig.setProperty(PORT.key(), "18080");
+        metricConfig.setProperty(
+                LABELS.key(), "global_label1=global_value1;global_label2=global_value2");
+        reporter = new PrometheusReporterFactory().createMetricReporter(metricConfig);
+        assertThat(reporter.labels.containsKey("global_label1"));
+        assertThat(reporter.labels.containsKey("global_label2"));
+        assertThat(reporter.labels.containsValue("global_value1"));
+        assertThat(reporter.labels.containsValue("global_value2"));
+    }
+
+    @Test
+    void assertLabelsAreAddedToMetrics() throws UnirestException {
+        String labels = "global_label1=global_value1;global_label2=global_value2";
+        MetricConfig metricConfig = new MetricConfig();
+        metricConfig.setProperty(HOST.key(), "localhost");
+        metricConfig.setProperty(PORT.key(), "18080");
+        metricConfig.setProperty(LABELS.key(), labels);
+        reporter = new PrometheusReporterFactory().createMetricReporter(metricConfig);
+        metricGroup = TestUtils.createTestMetricGroup(LOGICAL_SCOPE, new HashMap<>());
+        Gauge<Integer> testGauge = () -> null;
+        reporter.notifyOfAddedMetric(testGauge, "testGauge", metricGroup);
+        String expectedLabels =
+                parseLabels(labels).entrySet().stream()
+                        .map(e -> e.getKey() + "=\"" + e.getValue() + "\"")
+                        .collect(Collectors.joining(","));
+        String expectedResponse =
+                ""
+                        + String.format(
+                                "# HELP %s %s (scope: %s)\n",
+                                SCOPE_PREFIX + "testGauge", "testGauge", LOGICAL_SCOPE)
+                        + String.format("# TYPE %s %s\n", SCOPE_PREFIX + "testGauge", "gauge")
+                        + String.format(
+                                "%s%s%s%s %s\n",
+                                SCOPE_PREFIX + "testGauge", "{", expectedLabels, ",}", "0.0");
+        assertThat(pollMetrics(reporter.getPort()).getBody()).contains(expectedResponse);
     }
 
     /**
@@ -195,6 +248,25 @@ class PrometheusReporterTest {
     }
 
     @Test
+    void testParseLabels() {
+        Map<String, String> labels = parseLabels("k1=v1;k2=v2");
+        assertThat(labels).containsEntry("k1", "v1");
+        assertThat(labels).containsEntry("k2", "v2");
+    }
+
+    @Test
+    void testParseIncompleteLabels() {
+        Map<String, String> labels = parseLabels("k1=");
+        assertThat(labels).isEmpty();
+
+        labels = parseLabels("=v1");
+        assertThat(labels).isEmpty();
+
+        labels = parseLabels("k1");
+        assertThat(labels).isEmpty();
+    }
+
+    @Test
     void doubleGaugeIsConvertedCorrectly() {
         assertThat(reporter.gaugeFrom(() -> 3.14).get()).isEqualTo(3.14);
     }
@@ -230,7 +302,8 @@ class PrometheusReporterTest {
         assertThatThrownBy(
                         () ->
                                 new PrometheusReporter(
-                                        Collections.singleton(reporter.getPort()).iterator()))
+                                        Collections.singleton(reporter.getPort()).iterator(),
+                                        Collections.emptyMap()))
                 .isInstanceOf(Exception.class);
     }
 
@@ -239,7 +312,7 @@ class PrometheusReporterTest {
         final Iterator<Integer> portRange =
                 Iterators.concat(
                         Iterators.singletonIterator(reporter.getPort()), portRangeProvider.next());
-        new PrometheusReporter(portRange).close();
+        new PrometheusReporter(portRange, Collections.emptyMap()).close();
     }
 
     private String addMetricAndPollResponse(Metric metric, String metricName)
