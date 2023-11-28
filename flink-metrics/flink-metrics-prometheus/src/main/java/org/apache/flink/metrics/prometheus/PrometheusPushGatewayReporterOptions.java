@@ -27,7 +27,7 @@ import org.apache.flink.configuration.description.LinkElement;
 import org.apache.flink.configuration.description.TextElement;
 
 /** Config options for the {@link PrometheusPushGatewayReporter}. */
-@Documentation.SuffixOption(ConfigConstants.METRICS_REPORTER_PREFIX + "prometheus")
+@Documentation.SuffixOption(ConfigConstants.METRICS_REPORTER_PREFIX + "promgateway")
 public class PrometheusPushGatewayReporterOptions {
 
     @Deprecated
@@ -78,6 +78,8 @@ public class PrometheusPushGatewayReporterOptions {
                                                     "here"))
                                     .build());
 
+    // Use the communal reporter option
+    @Deprecated
     public static final ConfigOption<Boolean> FILTER_LABEL_VALUE_CHARACTER =
             ConfigOptions.key("filterLabelValueCharacters")
                     .booleanType()

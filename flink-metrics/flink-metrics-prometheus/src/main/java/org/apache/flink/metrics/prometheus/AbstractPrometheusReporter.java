@@ -47,17 +47,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.FILTER_LABEL_VALUE_CHARACTER;
+import static org.apache.flink.metrics.prometheus.AbstractPrometheusReporterOptions.FILTER_LABEL_VALUE_CHARACTER;
 
 /** base prometheus reporter for prometheus metrics. */
 @PublicEvolving
 public abstract class AbstractPrometheusReporter implements MetricReporter {
-
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
-    private static final Pattern UNALLOWED_CHAR_PATTERN = Pattern.compile("[^a-zA-Z0-9:_]");
-    private static final CharacterFilter CHARACTER_FILTER =
-            AbstractPrometheusReporter::replaceInvalidChars;
+    // These patterns don't take into consideration the first character constraints
+    // https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
+    // It was decided to keep it simple and not to add complexity to the code, it would be a
+    // bigger refactor to change this behavior
+    private static final Pattern UNALLOWED_METRIC_NAME_PATTERN = Pattern.compile("[^a-zA-Z0-9_:]");
+    private static final Pattern UNALLOWED_LABEL_KEY_PATTERN = Pattern.compile("[^a-zA-Z0-9_]");
+    private static final String DEFAULT_REPLACEMENT_CHARACTER = "_";
+    @VisibleForTesting static final CharacterFilter METRIC_NAME_FILTER = replaceInvalidChars(UNALLOWED_METRIC_NAME_PATTERN);
+    @VisibleForTesting static final CharacterFilter LABEL_KEY_FILTER = replaceInvalidChars(UNALLOWED_LABEL_KEY_PATTERN);
+    // Default filter for label values is the same as for label keys. This is a legacy behavior that
+    // is kept for backward compatibility. It can be changed by setting the configuration option
+    // `FILTER_LABEL_VALUE_CHARACTER` to false. In a future version, the default value will be
+    // changed to false and the option will be removed.
+    @VisibleForTesting final CharacterFilter LABEL_VALUE_FILTER = input -> {
+            if (!this.filterLabelValueCharacters) {
+                return input;
+            } else {
+                return LABEL_KEY_FILTER.filterCharacters(input);
+            }
+    };
+    private Boolean filterLabelValueCharacters;
 
     @VisibleForTesting static final char SCOPE_SEPARATOR = '_';
     @VisibleForTesting static final String SCOPE_PREFIX = "flink" + SCOPE_SEPARATOR;
@@ -65,28 +82,22 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
     private final Map<String, AbstractMap.SimpleImmutableEntry<Collector, Integer>>
             collectorsWithCountByMetricName = new HashMap<>();
 
-    @VisibleForTesting
-    static String replaceInvalidChars(final String input) {
+    private static CharacterFilter replaceInvalidChars(final Pattern invalidPattern) {
         // https://prometheus.io/docs/instrumenting/writing_exporters/
-        // Only [a-zA-Z0-9:_] are valid in metric names, any other characters should be sanitized to
-        // an underscore.
-        return UNALLOWED_CHAR_PATTERN.matcher(input).replaceAll("_");
+        // https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels
+        // Only certain characters are valid in different parts of the metric. Any other characters
+        // should be sanitized to an underscore.
+        return input -> invalidPattern.matcher(input).replaceAll(DEFAULT_REPLACEMENT_CHARACTER);
     }
-
-    private CharacterFilter labelValueCharactersFilter = CHARACTER_FILTER;
 
     @VisibleForTesting final CollectorRegistry registry = new CollectorRegistry(true);
 
     @Override
     public void open(MetricConfig config) {
-        boolean filterLabelValueCharacters =
+        filterLabelValueCharacters =
                 config.getBoolean(
                         FILTER_LABEL_VALUE_CHARACTER.key(),
                         FILTER_LABEL_VALUE_CHARACTER.defaultValue());
-
-        if (!filterLabelValueCharacters) {
-            labelValueCharactersFilter = input -> input;
-        }
     }
 
     @Override
@@ -103,8 +114,8 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
         for (final Map.Entry<String, String> dimension : group.getAllVariables().entrySet()) {
             final String key = dimension.getKey();
             dimensionKeys.add(
-                    CHARACTER_FILTER.filterCharacters(key.substring(1, key.length() - 1)));
-            dimensionValues.add(labelValueCharactersFilter.filterCharacters(dimension.getValue()));
+                    LABEL_KEY_FILTER.filterCharacters(key.substring(1, key.length() - 1)));
+            dimensionValues.add(LABEL_VALUE_FILTER.filterCharacters(dimension.getValue()));
         }
 
         final String scopedMetricName = getScopedName(metricName, group);
@@ -143,7 +154,7 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
         return SCOPE_PREFIX
                 + getLogicalScope(group)
                 + SCOPE_SEPARATOR
-                + CHARACTER_FILTER.filterCharacters(metricName);
+                + METRIC_NAME_FILTER.filterCharacters(metricName);
     }
 
     private Collector createCollector(
@@ -233,7 +244,7 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
 
         List<String> dimensionValues = new LinkedList<>();
         for (final Map.Entry<String, String> dimension : group.getAllVariables().entrySet()) {
-            dimensionValues.add(labelValueCharactersFilter.filterCharacters(dimension.getValue()));
+            dimensionValues.add(LABEL_VALUE_FILTER.filterCharacters(dimension.getValue()));
         }
 
         final String scopedMetricName = getScopedName(metricName, group);
@@ -262,7 +273,7 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
 
     private static String getLogicalScope(MetricGroup group) {
         return LogicalScopeProvider.castFrom(group)
-                .getLogicalScope(CHARACTER_FILTER, SCOPE_SEPARATOR);
+                .getLogicalScope(METRIC_NAME_FILTER, SCOPE_SEPARATOR);
     }
 
     @VisibleForTesting

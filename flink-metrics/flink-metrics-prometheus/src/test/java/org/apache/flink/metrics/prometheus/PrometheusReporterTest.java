@@ -37,6 +37,8 @@ import com.mashape.unirest.http.exceptions.UnirestException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -51,14 +53,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** Basic test for {@link PrometheusReporter}. */
 class PrometheusReporterTest {
 
-    private static final String[] LABEL_NAMES = {"label1", "label2"};
-    private static final String[] LABEL_VALUES = new String[] {"value1", "value2"};
+    private static final String[] DEFAULT_LABEL_NAMES = {"label1", "label2"};
+    private static final String[] DEFAULT_LABEL_VALUES = new String[] {"value1", "value2"};
     private static final String LOGICAL_SCOPE = "logical_scope";
 
     private static final String DIMENSIONS =
             String.format(
                     "%s=\"%s\",%s=\"%s\"",
-                    LABEL_NAMES[0], LABEL_VALUES[0], LABEL_NAMES[1], LABEL_VALUES[1]);
+                    DEFAULT_LABEL_NAMES[0],
+                    DEFAULT_LABEL_VALUES[0],
+                    DEFAULT_LABEL_NAMES[1],
+                    DEFAULT_LABEL_VALUES[1]);
     private static final String DEFAULT_LABELS = "{" + DIMENSIONS + ",}";
     private static final String SCOPE_PREFIX =
             PrometheusReporter.SCOPE_PREFIX + LOGICAL_SCOPE + PrometheusReporter.SCOPE_SEPARATOR;
@@ -74,7 +79,7 @@ class PrometheusReporterTest {
 
         metricGroup =
                 TestUtils.createTestMetricGroup(
-                        LOGICAL_SCOPE, TestUtils.toMap(LABEL_NAMES, LABEL_VALUES));
+                        LOGICAL_SCOPE, TestUtils.toMap(DEFAULT_LABEL_NAMES, DEFAULT_LABEL_VALUES));
     }
 
     @AfterEach
@@ -177,21 +182,69 @@ class PrometheusReporterTest {
     }
 
     @Test
-    void invalidCharactersAreReplacedWithUnderscore() {
-        assertThat(PrometheusReporter.replaceInvalidChars("")).isEqualTo("");
-        assertThat(PrometheusReporter.replaceInvalidChars("abc")).isEqualTo("abc");
-        assertThat(PrometheusReporter.replaceInvalidChars("abc\"")).isEqualTo("abc_");
-        assertThat(PrometheusReporter.replaceInvalidChars("\"abc")).isEqualTo("_abc");
-        assertThat(PrometheusReporter.replaceInvalidChars("\"abc\"")).isEqualTo("_abc_");
-        assertThat(PrometheusReporter.replaceInvalidChars("\"a\"b\"c\"")).isEqualTo("_a_b_c_");
-        assertThat(PrometheusReporter.replaceInvalidChars("\"\"\"\"")).isEqualTo("____");
-        assertThat(PrometheusReporter.replaceInvalidChars("    ")).isEqualTo("____");
-        assertThat(PrometheusReporter.replaceInvalidChars("\"ab ;(c)'")).isEqualTo("_ab___c__");
-        assertThat(PrometheusReporter.replaceInvalidChars("a b c")).isEqualTo("a_b_c");
-        assertThat(PrometheusReporter.replaceInvalidChars("a b c ")).isEqualTo("a_b_c_");
-        assertThat(PrometheusReporter.replaceInvalidChars("a;b'c*")).isEqualTo("a_b_c_");
-        assertThat(PrometheusReporter.replaceInvalidChars("a,=;:?'b,=;:?'c"))
-                .isEqualTo("a___:__b___:__c");
+    @ParameterizedTest
+    @CsvSource({
+            // Input, Expected Output
+            "\"\", \"\"",
+            "abc, abc",
+            "abc\", abc_",
+            "\"abc, _abc",
+            "\"abc\", _abc_",
+            "\"a\"b\"c\", _a_b_c_",
+            "\"\"\"\", ____",
+            "    , ____",
+            "\"ab ;(c)', _ab___c__",
+            "a b c, a_b_c",
+            "a b c , a_b_c_",
+            "a;b'c*, a_b_c_",
+            "a,=;:?'b,=;:?'c, a___:__b___:__c"
+    })
+    void invalidCharactersAreReplacedWithUnderscoreMetricName(String input, String expectedOutput) {
+            assertThat(PrometheusReporter.METRIC_NAME_FILTER.filterCharacters(input)).isEqualTo(expectedOutput);
+    }
+
+    @Test
+    @ParameterizedTest
+    @CsvSource({
+            // Input, Expected Output
+            "\"\", \"\"",
+            "abc, abc",
+            "abc\", abc_",
+            "\"abc, _abc",
+            "\"abc\", _abc_",
+            "\"a\"b\"c\", _a_b_c_",
+            "\"\"\"\", ____",
+            "    , ____",
+            "\"ab ;(c)', _ab___c__",
+            "a b c, a_b_c",
+            "a b c , a_b_c_",
+            "a;b'c*, a_b_c_",
+            "a,=;:?'b,=;:?'c, a______b______c"
+    })
+    void invalidCharactersAreReplacedWithUnderscoreLabelKey(String input, String expectedOutput) {
+        assertThat(PrometheusReporter.LABEL_KEY_FILTER.filterCharacters(input)).isEqualTo(expectedOutput);
+    }
+
+    @Test
+    @ParameterizedTest
+    @CsvSource({
+            // Input, Expected Output
+            "\"\", \"\"",
+            "abc, abc",
+            "abc\", abc_",
+            "\"abc, _abc",
+            "\"abc\", _abc_",
+            "\"a\"b\"c\", _a_b_c_",
+            "\"\"\"\", ____",
+            "    , ____",
+            "\"ab ;(c)', _ab___c__",
+            "a b c, a_b_c",
+            "a b c , a_b_c_",
+            "a;b'c*, a_b_c_",
+            "a,=;:?'b,=;:?'c, a______b______c"
+    })
+    void invalidCharactersAreReplacedWithUnderscoreLabelValue(String input, String expectedOutput) {
+        assertThat(reporter.LABEL_VALUE_FILTER.filterCharacters(input)).isEqualTo(expectedOutput);
     }
 
     @Test

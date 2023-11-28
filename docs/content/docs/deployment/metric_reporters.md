@@ -181,6 +181,7 @@ Example configuration:
 
 ```yaml
 metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+metrics.reporter.prom.labels: additionalLabel1=additionalValue1;additionalLabel2=additionalValue2
 ```
 
 Flink metric types are mapped to Prometheus metric types as follows: 

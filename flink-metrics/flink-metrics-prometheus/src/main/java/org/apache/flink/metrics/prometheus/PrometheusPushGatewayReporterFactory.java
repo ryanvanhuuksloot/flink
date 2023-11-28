@@ -17,7 +17,6 @@
 
 package org.apache.flink.metrics.prometheus;
 
-import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.metrics.MetricConfig;
 import org.apache.flink.metrics.reporter.MetricReporterFactory;
 import org.apache.flink.util.AbstractID;
@@ -28,11 +27,10 @@ import org.slf4j.LoggerFactory;
 
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import static org.apache.flink.metrics.prometheus.PrometheusParsingUtils.parseGroupingKey;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.DELETE_ON_SHUTDOWN;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.GROUPING_KEY;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.HOST;
@@ -96,36 +94,5 @@ public class PrometheusPushGatewayReporterFactory implements MetricReporterFacto
         } catch (MalformedURLException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    @VisibleForTesting
-    static Map<String, String> parseGroupingKey(final String groupingKeyConfig) {
-        if (!groupingKeyConfig.isEmpty()) {
-            Map<String, String> groupingKey = new HashMap<>();
-            String[] kvs = groupingKeyConfig.split(";");
-            for (String kv : kvs) {
-                int idx = kv.indexOf("=");
-                if (idx < 0) {
-                    LOG.warn("Invalid prometheusPushGateway groupingKey:{}, will be ignored", kv);
-                    continue;
-                }
-
-                String labelKey = kv.substring(0, idx);
-                String labelValue = kv.substring(idx + 1);
-                if (StringUtils.isNullOrWhitespaceOnly(labelKey)
-                        || StringUtils.isNullOrWhitespaceOnly(labelValue)) {
-                    LOG.warn(
-                            "Invalid groupingKey {labelKey:{}, labelValue:{}} must not be empty",
-                            labelKey,
-                            labelValue);
-                    continue;
-                }
-                groupingKey.put(labelKey, labelValue);
-            }
-
-            return groupingKey;
-        }
-
-        return Collections.emptyMap();
     }
 }
