@@ -184,67 +184,69 @@ class PrometheusReporterTest {
     @Test
     @ParameterizedTest
     @CsvSource({
-            // Input, Expected Output
-            "\"\", \"\"",
-            "abc, abc",
-            "abc\", abc_",
-            "\"abc, _abc",
-            "\"abc\", _abc_",
-            "\"a\"b\"c\", _a_b_c_",
-            "\"\"\"\", ____",
-            "    , ____",
-            "\"ab ;(c)', _ab___c__",
-            "a b c, a_b_c",
-            "a b c , a_b_c_",
-            "a;b'c*, a_b_c_",
-            "a,=;:?'b,=;:?'c, a___:__b___:__c"
+        // Input, Expected Output
+        "\"\", \"\"",
+        "abc, abc",
+        "abc\", abc_",
+        "\"abc, _abc",
+        "\"abc\", _abc_",
+        "\"a\"b\"c\", _a_b_c_",
+        "\"\"\"\", ____",
+        "    , ____",
+        "\"ab ;(c)', _ab___c__",
+        "a b c, a_b_c",
+        "a b c , a_b_c_",
+        "a;b'c*, a_b_c_",
+        "a,=;:?'b,=;:?'c, a___:__b___:__c"
     })
     void invalidCharactersAreReplacedWithUnderscoreMetricName(String input, String expectedOutput) {
-            assertThat(PrometheusReporter.METRIC_NAME_FILTER.filterCharacters(input)).isEqualTo(expectedOutput);
+        assertThat(PrometheusReporter.METRIC_NAME_FILTER.filterCharacters(input))
+                .isEqualTo(expectedOutput);
     }
 
     @Test
     @ParameterizedTest
     @CsvSource({
-            // Input, Expected Output
-            "\"\", \"\"",
-            "abc, abc",
-            "abc\", abc_",
-            "\"abc, _abc",
-            "\"abc\", _abc_",
-            "\"a\"b\"c\", _a_b_c_",
-            "\"\"\"\", ____",
-            "    , ____",
-            "\"ab ;(c)', _ab___c__",
-            "a b c, a_b_c",
-            "a b c , a_b_c_",
-            "a;b'c*, a_b_c_",
-            "a,=;:?'b,=;:?'c, a______b______c"
+        // Input, Expected Output
+        "\"\", \"\"",
+        "abc, abc",
+        "abc\", abc_",
+        "\"abc, _abc",
+        "\"abc\", _abc_",
+        "\"a\"b\"c\", _a_b_c_",
+        "\"\"\"\", ____",
+        "    , ____",
+        "\"ab ;(c)', _ab___c__",
+        "a b c, a_b_c",
+        "a b c , a_b_c_",
+        "a;b'c*, a_b_c_",
+        "a,=;:?'b,=;:?'c, a______b______c"
     })
     void invalidCharactersAreReplacedWithUnderscoreLabelKey(String input, String expectedOutput) {
-        assertThat(PrometheusReporter.LABEL_KEY_FILTER.filterCharacters(input)).isEqualTo(expectedOutput);
+        assertThat(PrometheusReporter.LABEL_KEY_FILTER.filterCharacters(input))
+                .isEqualTo(expectedOutput);
     }
 
     @Test
     @ParameterizedTest
     @CsvSource({
-            // Input, Expected Output
-            "\"\", \"\"",
-            "abc, abc",
-            "abc\", abc_",
-            "\"abc, _abc",
-            "\"abc\", _abc_",
-            "\"a\"b\"c\", _a_b_c_",
-            "\"\"\"\", ____",
-            "    , ____",
-            "\"ab ;(c)', _ab___c__",
-            "a b c, a_b_c",
-            "a b c , a_b_c_",
-            "a;b'c*, a_b_c_",
-            "a,=;:?'b,=;:?'c, a______b______c"
+        // Input, Expected Output
+        "\"\", \"\"",
+        "abc, abc",
+        "abc\", abc_",
+        "\"abc, _abc",
+        "\"abc\", _abc_",
+        "\"a\"b\"c\", _a_b_c_",
+        "\"\"\"\", ____",
+        "    , ____",
+        "\"ab ;(c)', _ab___c__",
+        "a b c, a_b_c",
+        "a b c , a_b_c_",
+        "a;b'c*, a_b_c_",
+        "a,=;:?'b,=;:?'c, a______b______c"
     })
     void invalidCharactersAreReplacedWithUnderscoreLabelValue(String input, String expectedOutput) {
-        assertThat(reporter.LABEL_VALUE_FILTER.filterCharacters(input)).isEqualTo(expectedOutput);
+        assertThat(reporter.labelValueFilter.filterCharacters(input)).isEqualTo(expectedOutput);
     }
 
     @Test

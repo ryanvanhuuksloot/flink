@@ -61,19 +61,28 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
     private static final Pattern UNALLOWED_METRIC_NAME_PATTERN = Pattern.compile("[^a-zA-Z0-9_:]");
     private static final Pattern UNALLOWED_LABEL_KEY_PATTERN = Pattern.compile("[^a-zA-Z0-9_]");
     private static final String DEFAULT_REPLACEMENT_CHARACTER = "_";
-    @VisibleForTesting static final CharacterFilter METRIC_NAME_FILTER = replaceInvalidChars(UNALLOWED_METRIC_NAME_PATTERN);
-    @VisibleForTesting static final CharacterFilter LABEL_KEY_FILTER = replaceInvalidChars(UNALLOWED_LABEL_KEY_PATTERN);
+
+    @VisibleForTesting
+    static final CharacterFilter METRIC_NAME_FILTER =
+            replaceInvalidChars(UNALLOWED_METRIC_NAME_PATTERN);
+
+    @VisibleForTesting
+    static final CharacterFilter LABEL_KEY_FILTER =
+            replaceInvalidChars(UNALLOWED_LABEL_KEY_PATTERN);
     // Default filter for label values is the same as for label keys. This is a legacy behavior that
     // is kept for backward compatibility. It can be changed by setting the configuration option
     // `FILTER_LABEL_VALUE_CHARACTER` to false. In a future version, the default value will be
     // changed to false and the option will be removed.
-    @VisibleForTesting final CharacterFilter LABEL_VALUE_FILTER = input -> {
-            if (!this.filterLabelValueCharacters) {
-                return input;
-            } else {
-                return LABEL_KEY_FILTER.filterCharacters(input);
-            }
-    };
+    @VisibleForTesting
+    final CharacterFilter labelValueFilter =
+            input -> {
+                if (!this.filterLabelValueCharacters) {
+                    return input;
+                } else {
+                    return LABEL_KEY_FILTER.filterCharacters(input);
+                }
+            };
+
     private Boolean filterLabelValueCharacters;
 
     @VisibleForTesting static final char SCOPE_SEPARATOR = '_';
@@ -115,7 +124,7 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
             final String key = dimension.getKey();
             dimensionKeys.add(
                     LABEL_KEY_FILTER.filterCharacters(key.substring(1, key.length() - 1)));
-            dimensionValues.add(LABEL_VALUE_FILTER.filterCharacters(dimension.getValue()));
+            dimensionValues.add(labelValueFilter.filterCharacters(dimension.getValue()));
         }
 
         final String scopedMetricName = getScopedName(metricName, group);
@@ -244,7 +253,7 @@ public abstract class AbstractPrometheusReporter implements MetricReporter {
 
         List<String> dimensionValues = new LinkedList<>();
         for (final Map.Entry<String, String> dimension : group.getAllVariables().entrySet()) {
-            dimensionValues.add(LABEL_VALUE_FILTER.filterCharacters(dimension.getValue()));
+            dimensionValues.add(labelValueFilter.filterCharacters(dimension.getValue()));
         }
 
         final String scopedMetricName = getScopedName(metricName, group);
