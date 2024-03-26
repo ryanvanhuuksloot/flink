@@ -36,20 +36,22 @@ class PrometheusPushGatewayReporterTest {
 
     @Test
     void testParseGroupingKey() {
-        Map<String, String> groupingKey = parseGroupingKey("k1=v1;k2=v2");
+        Map<String, String> groupingKey =
+                PrometheusPushGatewayReporterFactory.parseGroupingKey("k1=v1;k2=v2");
         assertThat(groupingKey).containsEntry("k1", "v1");
         assertThat(groupingKey).containsEntry("k2", "v2");
     }
 
     @Test
     void testParseIncompleteGroupingKey() {
-        Map<String, String> groupingKey = parseGroupingKey("k1=");
+        Map<String, String> groupingKey =
+                PrometheusPushGatewayReporterFactory.parseGroupingKey("k1=");
         assertThat(groupingKey).isEmpty();
 
-        groupingKey = parseGroupingKey("=v1");
+        groupingKey = PrometheusPushGatewayReporterFactory.parseGroupingKey("=v1");
         assertThat(groupingKey).isEmpty();
 
-        groupingKey = parseGroupingKey("k1");
+        groupingKey = PrometheusPushGatewayReporterFactory.parseGroupingKey("k1");
         assertThat(groupingKey).isEmpty();
     }
 

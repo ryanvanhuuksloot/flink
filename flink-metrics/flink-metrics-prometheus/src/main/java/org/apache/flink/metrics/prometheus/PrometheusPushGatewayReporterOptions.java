@@ -28,7 +28,7 @@ import org.apache.flink.configuration.description.TextElement;
 
 /** Config options for the {@link PrometheusPushGatewayReporter}. */
 @Documentation.SuffixOption(ConfigConstants.METRICS_REPORTER_PREFIX + "promgateway")
-public class PrometheusPushGatewayReporterOptions {
+public class PrometheusPushGatewayReporterOptions implements AbstractPrometheusReporterOptions {
 
     @Deprecated
     public static final ConfigOption<String> HOST =
@@ -76,25 +76,6 @@ public class PrometheusPushGatewayReporterOptions {
                                             LinkElement.link(
                                                     "https://issues.apache.org/jira/browse/FLINK-13787",
                                                     "here"))
-                                    .build());
-
-    // Use the communal reporter option
-    @Deprecated
-    public static final ConfigOption<Boolean> FILTER_LABEL_VALUE_CHARACTER =
-            ConfigOptions.key("filterLabelValueCharacters")
-                    .booleanType()
-                    .defaultValue(true)
-                    .withDescription(
-                            Description.builder()
-                                    .text(
-                                            "Specifies whether to filter label value characters."
-                                                    + " If enabled, all characters not matching [a-zA-Z0-9:_] will be removed,"
-                                                    + " otherwise no characters will be removed."
-                                                    + " Before disabling this option please ensure that your"
-                                                    + " label values meet the %s.",
-                                            LinkElement.link(
-                                                    "https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels",
-                                                    "Prometheus requirements"))
                                     .build());
 
     public static final ConfigOption<String> GROUPING_KEY =

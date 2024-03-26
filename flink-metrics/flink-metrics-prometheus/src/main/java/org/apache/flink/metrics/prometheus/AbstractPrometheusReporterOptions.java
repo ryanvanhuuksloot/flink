@@ -1,17 +1,13 @@
 package org.apache.flink.metrics.prometheus;
 
-import org.apache.flink.annotation.docs.Documentation;
-import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.description.Description;
 import org.apache.flink.configuration.description.LinkElement;
-import org.apache.flink.configuration.description.TextElement;
 
-/** Config options for the {@link PrometheusReporter}. */
-@Documentation.SuffixOption(ConfigConstants.METRICS_REPORTER_PREFIX + "prometheus")
-public class AbstractPrometheusReporterOptions {
-    public static final ConfigOption<Boolean> FILTER_LABEL_VALUE_CHARACTER =
+/** Config options for the {@link PrometheusReporter} and {@link PrometheusPushGatewayReporter}. */
+public interface AbstractPrometheusReporterOptions {
+    ConfigOption<Boolean> FILTER_LABEL_VALUE_CHARACTER =
             ConfigOptions.key("filterLabelValueCharacters")
                     .booleanType()
                     .defaultValue(true)
