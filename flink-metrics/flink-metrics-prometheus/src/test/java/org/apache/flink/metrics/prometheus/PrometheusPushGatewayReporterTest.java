@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static org.apache.flink.metrics.prometheus.PrometheusParsingUtils.parseGroupingKey;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.HOST;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.HOST_URL;
 import static org.apache.flink.metrics.prometheus.PrometheusPushGatewayReporterOptions.PORT;
