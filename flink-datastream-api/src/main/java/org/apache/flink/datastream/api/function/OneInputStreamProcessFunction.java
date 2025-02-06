@@ -19,6 +19,8 @@
 package org.apache.flink.datastream.api.function;
 
 import org.apache.flink.annotation.Experimental;
+import org.apache.flink.api.common.watermark.Watermark;
+import org.apache.flink.api.common.watermark.WatermarkHandlingResult;
 import org.apache.flink.datastream.api.common.Collector;
 import org.apache.flink.datastream.api.context.NonPartitionedContext;
 import org.apache.flink.datastream.api.context.PartitionedContext;
@@ -45,7 +47,8 @@ public interface OneInputStreamProcessFunction<IN, OUT> extends ProcessFunction 
      * @param output to emit processed records.
      * @param ctx runtime context in which this function is executed.
      */
-    void processRecord(IN record, Collector<OUT> output, PartitionedContext ctx) throws Exception;
+    void processRecord(IN record, Collector<OUT> output, PartitionedContext<OUT> ctx)
+            throws Exception;
 
     /**
      * This is a life-cycle method indicates that this function will no longer receive any data from
@@ -62,5 +65,12 @@ public interface OneInputStreamProcessFunction<IN, OUT> extends ProcessFunction 
      * @param output to emit record.
      * @param ctx runtime context in which this function is executed.
      */
-    default void onProcessingTimer(long timestamp, Collector<OUT> output, PartitionedContext ctx) {}
+    default void onProcessingTimer(
+            long timestamp, Collector<OUT> output, PartitionedContext<OUT> ctx) {}
+
+    /** Callback function when receive watermark. */
+    default WatermarkHandlingResult onWatermark(
+            Watermark watermark, Collector<OUT> output, NonPartitionedContext<OUT> ctx) {
+        return WatermarkHandlingResult.PEEK;
+    }
 }

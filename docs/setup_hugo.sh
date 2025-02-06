@@ -17,10 +17,19 @@
 # limitations under the License.
 ################################################################################
 
-# setup hugo
+# Detect Operating System
+OS="Linux"
+[[ "$OSTYPE" == "darwin"* ]] && OS="Mac"
+
 HUGO_VERSION=0.110.0
-HUGO_ARTIFACT=hugo_extended_${HUGO_VERSION}_Linux-64bit.tar.gz
-HUGO_REPO=https://github.com/gohugoio/hugo/releases/download/v$HUGO_VERSION/$HUGO_ARTIFACT
+# Setup Hugo based on OS
+if [ "$OS" = "Mac" ]; then
+    HUGO_ARTIFACT="hugo_extended_${HUGO_VERSION}_darwin-universal.tar.gz"
+else
+    HUGO_ARTIFACT="hugo_extended_${HUGO_VERSION}0_Linux-64bit.tar.gz"
+fi
+
+HUGO_REPO="https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/${HUGO_ARTIFACT}"
 if ! curl --fail -OL $HUGO_REPO ; then
 	echo "Failed to download Hugo binary"
 	exit 1

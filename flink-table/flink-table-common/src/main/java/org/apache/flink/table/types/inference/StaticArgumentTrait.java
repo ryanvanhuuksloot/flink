@@ -37,6 +37,8 @@ public enum StaticArgumentTrait {
     MODEL(),
     TABLE_AS_ROW(TABLE),
     TABLE_AS_SET(TABLE),
+    PASS_COLUMNS_THROUGH(TABLE),
+    SUPPORT_UPDATES(TABLE),
     OPTIONAL_PARTITION_BY(TABLE_AS_SET);
 
     private final Set<StaticArgumentTrait> requirements;

@@ -21,7 +21,6 @@ import org.apache.flink.legacy.table.sinks.{AppendStreamTableSink, RetractStream
 import org.apache.flink.table.api.TableException
 import org.apache.flink.table.api.config.ExecutionConfigOptions
 import org.apache.flink.table.api.config.ExecutionConfigOptions.UpsertMaterialize
-import org.apache.flink.table.catalog.{ManagedTableListener, ResolvedCatalogBaseTable}
 import org.apache.flink.table.connector.ChangelogMode
 import org.apache.flink.table.planner.plan.`trait`._
 import org.apache.flink.table.planner.plan.`trait`.UpdateKindTrait.{beforeAfterOrNone, onlyAfterOrNone, BEFORE_AND_AFTER, ONLY_UPDATE_AFTER}
@@ -32,6 +31,7 @@ import org.apache.flink.table.planner.plan.utils.RankProcessStrategy.{AppendFast
 import org.apache.flink.table.planner.sinks.DataStreamTableSink
 import org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig
 import org.apache.flink.table.runtime.operators.join.FlinkJoinType
+import org.apache.flink.table.types.inference.{StaticArgument, StaticArgumentTrait}
 import org.apache.flink.types.RowKind
 
 import org.apache.calcite.rel.RelNode
@@ -330,6 +330,29 @@ class FlinkChangelogModeInferenceProgram extends FlinkOptimizeProgram[StreamOpti
         val providedTrait = new ModifyKindSetTrait(scan.intermediateTable.modifyKindSet)
         createNewNode(scan, List(), providedTrait, requiredTrait, requester)
 
+      case process: StreamPhysicalProcessTableFunction =>
+        // Accepted changes depend on input argument declaration
+        val requiredChildrenTraits = process.getProvidedInputArgs
+          .map(
+            arg =>
+              if (arg.is(StaticArgumentTrait.SUPPORT_UPDATES)) {
+                ModifyKindSetTrait.ALL_CHANGES
+              } else {
+                ModifyKindSetTrait.INSERT_ONLY
+              })
+          .toList
+
+        val children = if (requiredChildrenTraits.isEmpty) {
+          // Constant function has a single StreamPhysicalValues input
+          visitChildren(process, ModifyKindSetTrait.INSERT_ONLY)
+        } else {
+          visitChildren(process, requiredChildrenTraits)
+        }
+
+        // Currently, PTFs will only output insert-only
+        val providedTrait = ModifyKindSetTrait.INSERT_ONLY
+        createNewNode(process, children, providedTrait, requiredTrait, requester)
+
       case _ =>
         throw new UnsupportedOperationException(
           s"Unsupported visit for ${rel.getClass.getSimpleName}")
@@ -347,6 +370,16 @@ class FlinkChangelogModeInferenceProgram extends FlinkOptimizeProgram[StreamOpti
         requester: String): List[StreamPhysicalRel] = {
       val newChildren = for (i <- 0 until parent.getInputs.size()) yield {
         visitChild(parent, i, requiredChildrenTrait, requester)
+      }
+      newChildren.toList
+    }
+
+    private def visitChildren(
+        parent: StreamPhysicalRel,
+        requiredChildrenTraits: List[ModifyKindSetTrait]): List[StreamPhysicalRel] = {
+      val requester = getNodeName(parent)
+      val newChildren = for (i <- 0 until parent.getInputs.size()) yield {
+        visitChild(parent, i, requiredChildrenTraits(i), requester)
       }
       newChildren.toList
     }
@@ -638,29 +671,6 @@ class FlinkChangelogModeInferenceProgram extends FlinkOptimizeProgram[StreamOpti
           }
 
         case normalize: StreamPhysicalChangelogNormalize =>
-          val contextResolvedTable = normalize.contextResolvedTable
-          val tableIdentifier = contextResolvedTable.getIdentifier
-          if (
-            !contextResolvedTable.isAnonymous
-            && requiredTrait == UpdateKindTrait.ONLY_UPDATE_AFTER
-          ) {
-            val catalogName = tableIdentifier.getCatalogName
-            val catalog = context.getCatalogManager.getCatalog(catalogName).orElse(null)
-            val catalogTable = contextResolvedTable.getResolvedTable[ResolvedCatalogBaseTable[_]]
-            if (ManagedTableListener.isManagedTable(catalog, catalogTable)) {
-              // if requiredTrait is ONLY_UPDATE_AFTER and table is ManagedTable,
-              // we can eliminate current normalize stage,
-              // cuz ManagedTable has preserved complete delete messages.
-              val input = normalize.getInput match {
-                case exchange: StreamPhysicalExchange =>
-                  exchange.getInput
-                case _ =>
-                  normalize.getInput
-              }
-              val inputPhysicalRel = input.asInstanceOf[StreamPhysicalRel]
-              return this.visit(inputPhysicalRel, UpdateKindTrait.ONLY_UPDATE_AFTER)
-            }
-          }
           // changelog normalize currently only supports input only sending UPDATE_AFTER
           val children = visitChildren(normalize, UpdateKindTrait.ONLY_UPDATE_AFTER)
           // use requiredTrait as providedTrait,
@@ -699,6 +709,20 @@ class FlinkChangelogModeInferenceProgram extends FlinkOptimizeProgram[StreamOpti
           } else {
             createNewNode(rel, Some(List()), providedTrait)
           }
+
+        case process: StreamPhysicalProcessTableFunction =>
+          // ProcessTableFunction currently only consumes retract or insert-only
+          val children = process.getInputs.map {
+            case child: StreamPhysicalRel =>
+              val childModifyKindSet = getModifyKindSet(child)
+              val requiredChildTrait = if (childModifyKindSet.isInsertOnly) {
+                UpdateKindTrait.NONE
+              } else {
+                UpdateKindTrait.BEFORE_AND_AFTER
+              }
+              this.visit(child, requiredChildTrait)
+          }.toList
+          createNewNode(rel, Some(children.flatten), UpdateKindTrait.NONE)
 
         case _ =>
           throw new UnsupportedOperationException(

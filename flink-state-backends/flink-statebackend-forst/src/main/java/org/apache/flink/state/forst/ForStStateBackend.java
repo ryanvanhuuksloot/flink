@@ -28,16 +28,20 @@ import org.apache.flink.configuration.DescribedEnum;
 import org.apache.flink.configuration.IllegalConfigurationException;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.configuration.description.InlineElement;
+import org.apache.flink.core.execution.RecoveryClaimMode;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.execution.Environment;
 import org.apache.flink.runtime.memory.OpaqueMemoryResource;
 import org.apache.flink.runtime.state.AbstractKeyedStateBackend;
 import org.apache.flink.runtime.state.AbstractManagedMemoryStateBackend;
+import org.apache.flink.runtime.state.CheckpointStorageAccess;
 import org.apache.flink.runtime.state.ConfigurableStateBackend;
 import org.apache.flink.runtime.state.DefaultOperatorStateBackendBuilder;
 import org.apache.flink.runtime.state.LocalRecoveryConfig;
 import org.apache.flink.runtime.state.OperatorStateBackend;
 import org.apache.flink.runtime.state.StreamCompressionDecorator;
+import org.apache.flink.runtime.state.filesystem.FsCheckpointStorageAccess;
 import org.apache.flink.runtime.state.metrics.LatencyTrackingStateConfig;
 import org.apache.flink.state.forst.ForStMemoryControllerUtils.ForStMemoryFactory;
 import org.apache.flink.state.forst.sync.ForStPriorityQueueConfig;
@@ -72,6 +76,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
+import static org.apache.flink.configuration.StateRecoveryOptions.RESTORE_MODE;
 import static org.apache.flink.configuration.description.TextElement.text;
 import static org.apache.flink.state.forst.ForStConfigurableOptions.RESTORE_OVERLAP_FRACTION_THRESHOLD;
 import static org.apache.flink.state.forst.ForStConfigurableOptions.USE_DELETE_FILES_IN_RANGE_DURING_RESCALING;
@@ -89,6 +94,8 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 @Experimental
 public class ForStStateBackend extends AbstractManagedMemoryStateBackend
         implements ConfigurableStateBackend {
+
+    public static final String REMOTE_SHORTCUT_CHECKPOINT = "checkpoint-dir";
 
     private static final long serialVersionUID = 1L;
 
@@ -172,6 +179,11 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
      */
     private final TernaryBoolean rescalingUseDeleteFilesInRange;
 
+    /** The recovery claim mode. */
+    private RecoveryClaimMode recoveryClaimMode = RecoveryClaimMode.DEFAULT;
+
+    private boolean remoteShareWithCheckpoint;
+
     // ------------------------------------------------------------------------
 
     /** Creates a new {@code ForStStateBackend} for storing state. */
@@ -183,6 +195,7 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
         this.overlapFractionThreshold = UNDEFINED_OVERLAP_FRACTION_THRESHOLD;
         this.useIngestDbRestoreMode = TernaryBoolean.UNDEFINED;
         this.rescalingUseDeleteFilesInRange = TernaryBoolean.UNDEFINED;
+        this.remoteShareWithCheckpoint = false;
     }
 
     /**
@@ -199,11 +212,17 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                         original.memoryConfiguration, config);
         this.memoryConfiguration.validate();
 
+        this.remoteShareWithCheckpoint = false;
         if (original.remoteForStDirectory != null) {
             this.remoteForStDirectory = original.remoteForStDirectory;
         } else {
             String remoteDirStr = config.get(ForStOptions.REMOTE_DIRECTORY);
-            this.remoteForStDirectory = remoteDirStr == null ? null : new Path(remoteDirStr);
+            if (REMOTE_SHORTCUT_CHECKPOINT.equals(remoteDirStr)) {
+                this.remoteForStDirectory = null;
+                this.remoteShareWithCheckpoint = true;
+            } else {
+                this.remoteForStDirectory = remoteDirStr == null ? null : new Path(remoteDirStr);
+            }
         }
 
         this.priorityQueueConfig =
@@ -272,6 +291,10 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                         original.rescalingUseDeleteFilesInRange,
                         USE_DELETE_FILES_IN_RANGE_DURING_RESCALING,
                         config);
+
+        if (config.getOptional(RESTORE_MODE).isPresent()) {
+            recoveryClaimMode = config.get(RESTORE_MODE);
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -382,10 +405,22 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                 new Path(
                         new File(new File(getNextStoragePath(), jobId.toHexString()), opChildPath)
                                 .getAbsolutePath());
-        Path remoteBasePath =
-                remoteForStDirectory != null
-                        ? new Path(new Path(remoteForStDirectory, jobId.toHexString()), opChildPath)
-                        : null;
+        Path remoteBasePath = null;
+        if (remoteForStDirectory != null) {
+            remoteBasePath =
+                    new Path(new Path(remoteForStDirectory, jobId.toHexString()), opChildPath);
+        } else if (remoteShareWithCheckpoint) {
+            if (env.getCheckpointStorageAccess() instanceof FsCheckpointStorageAccess) {
+                Path sharedStateDirectory =
+                        ((FsCheckpointStorageAccess) env.getCheckpointStorageAccess())
+                                .getSharedStateDirectory();
+                remoteBasePath = new Path(sharedStateDirectory, opChildPath);
+                LOG.info("Set remote ForSt directory to checkpoint directory {}", remoteBasePath);
+            } else {
+                LOG.warn(
+                        "Remote ForSt directory can't be set, because checkpoint directory isn't on file system.");
+            }
+        }
 
         final OpaqueMemoryResource<ForStSharedResources> sharedResources =
                 ForStOperationUtils.allocateSharedCachesIfConfigured(
@@ -402,6 +437,8 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                         sharedResources,
                         localBasePath,
                         remoteBasePath,
+                        env.getCheckpointStorageAccess(),
+                        parameters.getMetricGroup(),
                         nativeMetricOptions.isStatisticsEnabled());
 
         ForStKeyedStateBackendBuilder<K> builder =
@@ -413,6 +450,7 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                                 parameters.getKeySerializer(),
                                 parameters.getNumberOfKeyGroups(),
                                 parameters.getKeyGroupRange(),
+                                env.getExecutionConfig(),
                                 priorityQueueConfig,
                                 parameters.getTtlTimeProvider(),
                                 parameters.getMetricGroup(),
@@ -432,7 +470,8 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                                         USE_INGEST_DB_RESTORE_MODE.defaultValue()))
                         .setRescalingUseDeleteFilesInRange(
                                 rescalingUseDeleteFilesInRange.getOrDefault(
-                                        USE_DELETE_FILES_IN_RANGE_DURING_RESCALING.defaultValue()));
+                                        USE_DELETE_FILES_IN_RANGE_DURING_RESCALING.defaultValue()))
+                        .setRecoveryClaimMode(recoveryClaimMode);
 
         return builder.build();
     }
@@ -483,6 +522,8 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                         sharedResources,
                         instanceBasePath,
                         null,
+                        env.getCheckpointStorageAccess(),
+                        null,
                         nativeMetricOptions.isStatisticsEnabled());
 
         ExecutionConfig executionConfig = env.getExecutionConfig();
@@ -523,7 +564,8 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                                         USE_INGEST_DB_RESTORE_MODE.defaultValue()))
                         .setRescalingUseDeleteFilesInRange(
                                 rescalingUseDeleteFilesInRange.getOrDefault(
-                                        USE_DELETE_FILES_IN_RANGE_DURING_RESCALING.defaultValue()));
+                                        USE_DELETE_FILES_IN_RANGE_DURING_RESCALING.defaultValue()))
+                        .setRecoveryClaimMode(recoveryClaimMode);
         return builder.build();
     }
 
@@ -751,7 +793,7 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
 
     @VisibleForTesting
     ForStResourceContainer createOptionsAndResourceContainer(@Nullable Path localBasePath) {
-        return createOptionsAndResourceContainer(null, localBasePath, null, false);
+        return createOptionsAndResourceContainer(null, localBasePath, null, null, null, false);
     }
 
     @VisibleForTesting
@@ -759,6 +801,8 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
             @Nullable OpaqueMemoryResource<ForStSharedResources> sharedResources,
             @Nullable Path localBasePath,
             @Nullable Path remoteBasePath,
+            @Nullable CheckpointStorageAccess checkpointStorageAccess,
+            @Nullable MetricGroup metricGroup,
             boolean enableStatistics) {
 
         return new ForStResourceContainer(
@@ -767,6 +811,9 @@ public class ForStStateBackend extends AbstractManagedMemoryStateBackend
                 sharedResources,
                 localBasePath,
                 remoteBasePath,
+                recoveryClaimMode,
+                checkpointStorageAccess,
+                metricGroup,
                 enableStatistics);
     }
 

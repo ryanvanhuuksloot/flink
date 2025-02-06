@@ -19,6 +19,8 @@
 package org.apache.flink.datastream.api.function;
 
 import org.apache.flink.annotation.Experimental;
+import org.apache.flink.api.common.watermark.Watermark;
+import org.apache.flink.api.common.watermark.WatermarkHandlingResult;
 import org.apache.flink.datastream.api.common.Collector;
 import org.apache.flink.datastream.api.context.NonPartitionedContext;
 import org.apache.flink.datastream.api.context.PartitionedContext;
@@ -49,7 +51,7 @@ public interface TwoInputBroadcastStreamProcessFunction<IN1, IN2, OUT> extends P
      * @param ctx runtime context in which this function is executed.
      */
     void processRecordFromNonBroadcastInput(
-            IN1 record, Collector<OUT> output, PartitionedContext ctx) throws Exception;
+            IN1 record, Collector<OUT> output, PartitionedContext<OUT> ctx) throws Exception;
 
     /**
      * Process record from broadcast input. In general, the broadcast side is not allowed to
@@ -85,5 +87,30 @@ public interface TwoInputBroadcastStreamProcessFunction<IN1, IN2, OUT> extends P
      * @param output to emit record.
      * @param ctx runtime context in which this function is executed.
      */
-    default void onProcessingTimer(long timestamp, Collector<OUT> output, PartitionedContext ctx) {}
+    default void onProcessingTimer(
+            long timestamp, Collector<OUT> output, PartitionedContext<OUT> ctx) {}
+
+    /**
+     * Callback function when receive the watermark from broadcast input.
+     *
+     * @param watermark to process.
+     * @param output to emit record.
+     * @param ctx runtime context in which this function is executed.
+     */
+    default WatermarkHandlingResult onWatermarkFromBroadcastInput(
+            Watermark watermark, Collector<OUT> output, NonPartitionedContext<OUT> ctx) {
+        return WatermarkHandlingResult.PEEK;
+    }
+
+    /**
+     * Callback function when receive the watermark from non-broadcast input.
+     *
+     * @param watermark to process.
+     * @param output to emit record.
+     * @param ctx runtime context in which this function is executed.
+     */
+    default WatermarkHandlingResult onWatermarkFromNonBroadcastInput(
+            Watermark watermark, Collector<OUT> output, NonPartitionedContext<OUT> ctx) {
+        return WatermarkHandlingResult.PEEK;
+    }
 }

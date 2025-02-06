@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.state;
 
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.state.State;
 import org.apache.flink.api.common.state.StateDescriptor;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
@@ -136,8 +137,9 @@ public class StateBackendTestUtils {
                 S getOrCreateKeyedState(
                         N defaultNamespace,
                         TypeSerializer<N> namespaceSerializer,
-                        org.apache.flink.runtime.state.v2.StateDescriptor<SV> stateDesc)
+                        org.apache.flink.api.common.state.v2.StateDescriptor<SV> stateDesc)
                         throws Exception {
+            stateDesc.initializeSerializerUnlessSet(new ExecutionConfig());
             return (S) innerStateSupplier.get();
         }
 
@@ -146,8 +148,9 @@ public class StateBackendTestUtils {
         public <N, S extends InternalKeyedState, SV> S createStateInternal(
                 @Nonnull N defaultNamespace,
                 @Nonnull TypeSerializer<N> namespaceSerializer,
-                @Nonnull org.apache.flink.runtime.state.v2.StateDescriptor<SV> stateDesc)
+                @Nonnull org.apache.flink.api.common.state.v2.StateDescriptor<SV> stateDesc)
                 throws Exception {
+            stateDesc.initializeSerializerUnlessSet(new ExecutionConfig());
             return (S) innerStateSupplier.get();
         }
 

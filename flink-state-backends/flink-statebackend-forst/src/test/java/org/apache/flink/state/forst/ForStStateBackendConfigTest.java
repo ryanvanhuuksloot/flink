@@ -35,8 +35,10 @@ import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.operators.testutils.MockEnvironment;
 import org.apache.flink.runtime.query.KvStateRegistry;
 import org.apache.flink.runtime.query.TaskKvStateRegistry;
+import org.apache.flink.runtime.state.CheckpointStorageAccess;
 import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.state.KeyedStateBackendParametersImpl;
+import org.apache.flink.runtime.state.filesystem.FsCheckpointStorageAccess;
 import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
 import org.apache.flink.runtime.util.TestingTaskManagerRuntimeInfo;
 import org.apache.flink.testutils.junit.FailsInGHAContainerWithRootUser;
@@ -60,6 +62,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -93,7 +96,8 @@ public class ForStStateBackendConfigTest {
         final File logFile = File.createTempFile(getClass().getSimpleName() + "-", ".log");
         // set the environment variable 'log.file' with the Flink log file location
         System.setProperty("log.file", logFile.getPath());
-        try (ForStResourceContainer container = backend.createOptionsAndResourceContainer(null)) {
+        try (ForStResourceContainer container =
+                backend.createOptionsAndResourceContainer(new Path(tempFolder.toString()))) {
             assertEquals(
                     ForStConfigurableOptions.LOG_LEVEL.defaultValue(),
                     container.getDbOptions().infoLogLevel());
@@ -515,7 +519,8 @@ public class ForStStateBackendConfigTest {
             configuration.setString(ForStConfigurableOptions.USE_BLOOM_FILTER.key(), "TRUE");
 
             try (ForStResourceContainer optionsContainer =
-                    new ForStResourceContainer(configuration, null, null, null, null, false)) {
+                    new ForStResourceContainer(
+                            configuration, null, null, null, null, null, null, null, false)) {
 
                 DBOptions dbOptions = optionsContainer.getDbOptions();
                 assertEquals(-1, dbOptions.maxOpenFiles());
@@ -598,7 +603,8 @@ public class ForStStateBackendConfigTest {
         Configuration configuration = new Configuration();
         configuration.set(ForStConfigurableOptions.COMPACTION_STYLE, CompactionStyle.UNIVERSAL);
         try (final ForStResourceContainer optionsContainer =
-                new ForStResourceContainer(configuration, null, null, null, null, false)) {
+                new ForStResourceContainer(
+                        configuration, null, null, null, null, null, null, null, false)) {
 
             final ColumnFamilyOptions columnFamilyOptions = optionsContainer.getColumnOptions();
             assertNotNull(columnFamilyOptions);
@@ -606,7 +612,8 @@ public class ForStStateBackendConfigTest {
         }
 
         try (final ForStResourceContainer optionsContainer =
-                new ForStResourceContainer(new Configuration(), null, null, null, null, false)) {
+                new ForStResourceContainer(
+                        new Configuration(), null, null, null, null, null, null, null, false)) {
 
             final ColumnFamilyOptions columnFamilyOptions = optionsContainer.getColumnOptions();
             assertNotNull(columnFamilyOptions);
@@ -774,12 +781,22 @@ public class ForStStateBackendConfigTest {
     //  Utilities
     // ------------------------------------------------------------------------
 
-    static MockEnvironment getMockEnvironment(File tempDir) {
-        return MockEnvironment.builder()
-                .setUserCodeClassLoader(ForStStateBackendConfigTest.class.getClassLoader())
-                .setTaskManagerRuntimeInfo(
-                        new TestingTaskManagerRuntimeInfo(new Configuration(), tempDir))
-                .build();
+    static MockEnvironment getMockEnvironment(File tempDir) throws IOException {
+        MockEnvironment env =
+                MockEnvironment.builder()
+                        .setUserCodeClassLoader(ForStStateBackendConfigTest.class.getClassLoader())
+                        .setTaskManagerRuntimeInfo(
+                                new TestingTaskManagerRuntimeInfo(new Configuration(), tempDir))
+                        .build();
+        CheckpointStorageAccess checkpointStorageAccess =
+                new FsCheckpointStorageAccess(
+                        new Path(tempDir.getPath(), "checkpoint"),
+                        null,
+                        env.getJobID(),
+                        1024,
+                        4096);
+        env.setCheckpointStorageAccess(checkpointStorageAccess);
+        return env;
     }
 
     private void verifyIllegalArgument(ConfigOption<?> configOption, String configValue) {
